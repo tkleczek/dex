@@ -215,16 +215,14 @@ func (s *Server) handleAuthorization(w http.ResponseWriter, r *http.Request) {
 		s.logger.Errorf("Failed to parse authorization request: %v", err)
 		status := http.StatusInternalServerError
 
-		// If this is an authErr, let's let it handle the error, or update the HTTP
-		// status code
-		if err, ok := err.(*authErr); ok {
-			if handler, ok := err.Handle(); ok {
-				// client_id and redirect_uri checked out and we can redirect back to
-				// the client with the error.
+		if authErr, ok := err.(*redirectedAuthErr); ok {
+			// If this is an redirectedAuthErr, let it handle the error
+			if handler, ok := authErr.Handle(); ok {
 				handler.ServeHTTP(w, r)
 				return
 			}
-			status = err.Status()
+		} else if err, ok := err.(*displayedAuthErr); ok {
+			status = err.Status
 		}
 
 		s.renderError(r, w, status, err.Error())
@@ -258,7 +256,7 @@ func (s *Server) handleAuthorization(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		s.tokenErrHelper(w, errInvalidConnectorID, "Connector ID does not match a valid Connector", http.StatusNotFound)
+		s.renderError(r, w, http.StatusBadRequest, "Connector ID does not match a valid Connector")
 		return
 	}
 
@@ -784,7 +782,7 @@ func (s *Server) handleToken(w http.ResponseWriter, r *http.Request) {
 	case grantTypePassword:
 		s.handlePasswordGrant(w, r, client)
 	default:
-		s.tokenErrHelper(w, errInvalidGrant, "", http.StatusBadRequest)
+		s.tokenErrHelper(w, errUnsupportedGrantType, "", http.StatusBadRequest)
 	}
 }
 

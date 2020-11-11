@@ -27,6 +27,12 @@ func TestParseAuthorizationRequest(t *testing.T) {
 		queryParams map[string]string
 
 		wantErr bool
+
+		// Should error be redirected back to the client
+		errRedirect bool
+
+		errType   string // error type (for redirect errors)
+		errStatus int    // http status (for displayed errors)
 	}{
 		{
 			name: "normal request",
@@ -76,7 +82,9 @@ func TestParseAuthorizationRequest(t *testing.T) {
 				"response_type": "code",
 				"scope":         "openid email profile",
 			},
-			wantErr: true,
+			wantErr:     true,
+			errRedirect: false,
+			errStatus:   http.StatusNotFound,
 		},
 		{
 			name: "invalid redirect uri",
@@ -93,7 +101,9 @@ func TestParseAuthorizationRequest(t *testing.T) {
 				"response_type": "code",
 				"scope":         "openid email profile",
 			},
-			wantErr: true,
+			wantErr:     true,
+			errRedirect: false,
+			errStatus:   http.StatusBadRequest,
 		},
 		{
 			name: "implicit flow",
@@ -126,7 +136,9 @@ func TestParseAuthorizationRequest(t *testing.T) {
 				"response_type": "code id_token",
 				"scope":         "openid email profile",
 			},
-			wantErr: true,
+			wantErr:     true,
+			errRedirect: true,
+			errType:     errUnsupportedResponseType,
 		},
 		{
 			name: "only token response type",
@@ -143,7 +155,9 @@ func TestParseAuthorizationRequest(t *testing.T) {
 				"response_type": "token",
 				"scope":         "openid email profile",
 			},
-			wantErr: true,
+			wantErr:     true,
+			errRedirect: true,
+			errType:     errInvalidRequest,
 		},
 		{
 			name: "choose connector_id",
@@ -195,7 +209,9 @@ func TestParseAuthorizationRequest(t *testing.T) {
 				"response_type": "code id_token",
 				"scope":         "openid email profile",
 			},
-			wantErr: true,
+			wantErr:     true,
+			errType:     errInvalidRequest,
+			errRedirect: true,
 		},
 		{
 			name: "PKCE code_challenge_method plain",
@@ -267,7 +283,9 @@ func TestParseAuthorizationRequest(t *testing.T) {
 				"code_challenge_method": "invalid_method",
 				"scope":                 "openid email profile",
 			},
-			wantErr: true,
+			wantErr:     true,
+			errRedirect: true,
+			errType:     errInvalidRequest,
 		},
 	}
 
@@ -300,6 +318,28 @@ func TestParseAuthorizationRequest(t *testing.T) {
 			}
 			if err == nil && tc.wantErr {
 				t.Errorf("%s: expected error", tc.name)
+			}
+			if tc.wantErr {
+				if tc.errRedirect {
+					e, ok := err.(*redirectedAuthErr)
+					if !ok {
+						t.Fatalf("%s: expected redirectedAuthErr error", tc.name)
+					}
+					if e.Type != tc.errType {
+						t.Errorf("%s: expected error type %v, got %v", tc.name, tc.errType, e.Type)
+					}
+					if e.RedirectURI != tc.queryParams["redirect_uri"] {
+						t.Errorf("%s: expected error to be returned in redirect to %v", tc.name, tc.queryParams["redirect_uri"])
+					}
+				} else {
+					e, ok := err.(*displayedAuthErr)
+					if !ok {
+						t.Fatalf("%s: expected displayedAuthErr error", tc.name)
+					}
+					if e.Status != tc.errStatus {
+						t.Errorf("%s: expected http status %v, got %v", tc.name, tc.errStatus, e.Status)
+					}
+				}
 			}
 		}()
 	}

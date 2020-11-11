@@ -607,6 +607,17 @@ func makeOAuth2Tests(clientID string, clientSecret string, now func() time.Time)
 					StatusCode: http.StatusBadRequest,
 				},
 			},
+			{
+				name: "unsupported grant type",
+				retrieveTokenOptions: []oauth2.AuthCodeOption{
+					oauth2.SetAuthURLParam("grant_type", "unsupported"),
+				},
+				handleToken: basicIDTokenVerify,
+				tokenError: ErrorResponse{
+					Error:      errUnsupportedGrantType,
+					StatusCode: http.StatusBadRequest,
+				},
+			},
 		},
 	}
 }
@@ -636,7 +647,7 @@ func TestOAuth2CodeFlow(t *testing.T) {
 
 	tests := makeOAuth2Tests(clientID, clientSecret, now)
 	for _, tc := range tests.tests {
-		func() {
+		t.Run(tc.name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
@@ -763,7 +774,7 @@ func TestOAuth2CodeFlow(t *testing.T) {
 			if respDump, err = httputil.DumpResponse(resp, true); err != nil {
 				t.Fatal(err)
 			}
-		}()
+		})
 	}
 }
 
